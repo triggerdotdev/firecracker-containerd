@@ -373,12 +373,22 @@ func (s *service) StartShim(shimCtx context.Context, opts shim.StartOpts) (strin
 		return "", err
 	}
 
-	fcControlClient := fccontrolTtrpc.NewFirecrackerClient(ttrpcClient)
-	_, err = fcControlClient.CreateVM(shimCtx, &proto.CreateVMRequest{
-		VMID:                     s.vmID,
-		ExitAfterAllTasksDeleted: exitAfterAllTasksDeleted,
-		ContainerCount:           int32(containerCount),
-	})
+    fcControlClient := fccontrolTtrpc.NewFirecrackerClient(ttrpcClient)
+
+    // Build CreateVMRequest, honoring optional memory override annotation.
+    createReq := &proto.CreateVMRequest{
+        VMID:                     s.vmID,
+        ExitAfterAllTasksDeleted: exitAfterAllTasksDeleted,
+        ContainerCount:           int32(containerCount),
+    }
+
+    if memMiB, ok, memErr := bundleDir.OCIConfig().VMMemoryMiB(); memErr != nil {
+        return "", memErr
+    } else if ok {
+        createReq.MachineCfg = &proto.FirecrackerMachineConfiguration{MemSizeMib: memMiB}
+    }
+
+    _, err = fcControlClient.CreateVM(shimCtx, createReq)
 	if err != nil {
 		errStatus, ok := status.FromError(err)
 		// ignore AlreadyExists errors, that just means the shim is already up and running

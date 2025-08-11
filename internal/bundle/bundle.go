@@ -16,6 +16,7 @@ package bundle
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"os"
 	"path/filepath"
 
@@ -127,4 +128,33 @@ func (c *OCIConfig) VMID() (string, error) {
 	// This will return empty string if the key is not present in the OCI config, which the caller can decide
 	// how to deal with
 	return ociConfig.Annotations[firecrackeroci.VMIDAnnotationKey], nil
+}
+
+// VMMemoryMiB returns the Firecracker microVM memory size override (in MiB) from the OCI annotations, if any.
+// The second return value indicates whether the annotation key was present.
+func (c *OCIConfig) VMMemoryMiB() (uint32, bool, error) {
+    ociConfigFile, err := c.File()
+    if err != nil {
+        return 0, false, err
+    }
+
+    defer ociConfigFile.Close()
+    var ociConfig struct {
+        Annotations map[string]string `json:"annotations,omitempty"`
+    }
+
+    if err := json.NewDecoder(ociConfigFile).Decode(&ociConfig); err != nil {
+        return 0, false, fmt.Errorf("failed to parse Annotations section of OCI config file %s: %w", c.path, err)
+    }
+
+    raw, ok := ociConfig.Annotations[firecrackeroci.VMMemoryMiBAnnotationKey]
+    if !ok || raw == "" {
+        return 0, false, nil
+    }
+    // Accept only positive values that fit in uint32
+    val, err := strconv.ParseUint(raw, 10, 32)
+    if err != nil {
+        return 0, true, fmt.Errorf("invalid value for %q: %q", firecrackeroci.VMMemoryMiBAnnotationKey, raw)
+    }
+    return uint32(val), true, nil
 }
